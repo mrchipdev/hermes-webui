@@ -187,6 +187,7 @@ if(typeof document!=='undefined'){
 // (e.g. queue drain + user click) can both pass the S.busy check because
 // setBusy(true) is only called after the first await inside send().
 let _sendInProgress = false;
+let _sendInProgressSid = null;  // session_id of the in-flight send
 const _sessionTitleProvisionalBySid = new Map();
 
 function _sessionTitleLooksDefaultOrProvisional(titleText, provisionalText){
@@ -236,11 +237,14 @@ async function send(){
   // instead of silently dropping it.
   if (_sendInProgress) {
     const _text=$('msg').value.trim();
-    if(_text && S.session && S.session.session_id){
-      queueSessionMessage(S.session.session_id,{text:_text,files:[...S.pendingFiles],model:S.session&&S.session.model||($('modelSelect')&&$('modelSelect').value)||'',model_provider:S.session&&S.session.model_provider||null,profile:S.activeProfile||'default'});
+    // Use the in-flight session's sid, not the currently viewed session,
+    // so the queued message goes to the chat that owns the active stream.
+    const _targetSid=_sendInProgressSid||(S.session&&S.session.session_id);
+    if(_text && _targetSid){
+      queueSessionMessage(_targetSid,{text:_text,files:[...S.pendingFiles],model:S.session&&S.session.model||($('modelSelect')&&$('modelSelect').value)||'',model_provider:S.session&&S.session.model_provider||null,profile:S.activeProfile||'default'});
       $('msg').value='';autoResize();
       S.pendingFiles=[];renderTray();
-      updateQueueBadge(S.session.session_id);
+      updateQueueBadge(_targetSid);
       showToast(`Queued: "${_text.slice(0,40)}${_text.length>40?'…':''}"`,2000);
     }
     return;
@@ -248,9 +252,9 @@ async function send(){
   _sendInProgress = true;
   try{
   const text=$('msg').value.trim();
-  if(!text&&!S.pendingFiles.length)return;
+  if(!text&&!S.pendingFiles.length){_sendInProgress=false;_sendInProgressSid=null;return;}
   // Don't send while an inline message edit is active
-  if(document.querySelector('.msg-edit-area'))return;
+  if(document.querySelector('.msg-edit-area')){_sendInProgress=false;_sendInProgressSid=null;return;}
 
   // Dismiss handoff hint when user sends a message (resets seen_at).
   if(S.session&&S.session.session_id&&typeof _dismissHandoffHint==='function'){
@@ -380,6 +384,7 @@ async function send(){
   if(!S.session){await newSession();await renderSessionList();}
 
   const activeSid=S.session.session_id;
+  _sendInProgressSid=activeSid;
 
   setComposerStatus(S.pendingFiles&&S.pendingFiles.length?'Uploading…':'');
   let uploaded=[];
@@ -528,7 +533,7 @@ async function send(){
   // Open SSE stream and render tokens live
   attachLiveStream(activeSid, streamId, uploadedNames);
 
-  }finally{ _sendInProgress=false; }
+  }finally{ _sendInProgress=false; _sendInProgressSid=null; }
 }
 
 const LIVE_STREAMS={};

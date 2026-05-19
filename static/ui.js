@@ -3266,6 +3266,16 @@ function setBusy(v){
     if(next){
       updateQueueBadge(sid);
       setTimeout(()=>{
+        // Guard: if the user switched away from the drain session during
+        // the 120ms settle window, the queued message must NOT go to the
+        // wrong chat.  Put it back into the original session's queue and
+        // skip sending — it will drain when the user returns to that session
+        // or when its next stream completes while it is the active view.
+        if(S.session&&S.session.session_id!==sid){
+          queueSessionMessage(sid,next);
+          updateQueueBadge(sid);
+          return;
+        }
         $('msg').value=next.text||'';
         S.pendingFiles=Array.isArray(next.files)?[...next.files]:[];
         // Restore model from queued item (sent in /api/chat/start payload)
