@@ -2219,7 +2219,11 @@ def _metadata_only_message_summary(sid: str, profile: str | None = None) -> dict
         sidecar_messages = getattr(sidecar_session, "messages", []) or []
     state_db_messages = get_state_db_session_messages(sid, profile=profile)
     return _message_summary(
-        merge_session_messages_append_only(sidecar_messages, state_db_messages)
+        merge_session_messages_append_only(
+            sidecar_messages,
+            state_db_messages,
+            truncation_watermark=getattr(sidecar_session, "truncation_watermark", None),
+        )
     )
 
 
@@ -4050,7 +4054,11 @@ def handle_get(handler, parsed) -> bool:
                     # them chronologically and dedupe exact repeats.
                     _all_msgs = _merged_session_messages_for_display(s, cli_messages)
                 else:
-                    _all_msgs = merge_session_messages_append_only(s.messages, state_db_messages)
+                    _all_msgs = merge_session_messages_append_only(
+                        s.messages,
+                        state_db_messages,
+                        truncation_watermark=getattr(s, "truncation_watermark", None),
+                    )
             else:
                 if is_messaging_session and cli_messages:
                     sidecar_messages = getattr(s, "messages", []) or []
@@ -5464,6 +5472,11 @@ def handle_post(handler, parsed) -> bool:
         keep = int(body["keep_count"])
         with _get_session_agent_lock(body["session_id"]):
             s.messages = s.messages[:keep]
+            try:
+                from api.session_ops import _truncation_watermark_for
+                s.truncation_watermark = _truncation_watermark_for(s.messages)
+            except Exception:
+                s.truncation_watermark = 0.0
             s.save()
         return j(
             handler, {"ok": True, "session": s.compact() | {"messages": s.messages}}

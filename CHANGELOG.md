@@ -12,6 +12,7 @@
 - Trim session-level tool call payloads to the returned message window for paginated `/api/session` loads, so long tool-heavy sessions do not send historical tool call summaries during ordinary session switching.
 - Sidebar compression lineage collapse now prefers the current continuation tip over a preserved parent snapshot when both rows share the same backend segment count. This keeps reloads after context compression from reopening the older parent transcript and making the active conversation appear to disappear.
 - Reloading a stale `/session/<parent>` compression URL now resolves to the visible continuation tip from the sidebar payload instead of reopening the archived parent snapshot.
+- Undo, retry, and explicit session truncation now persist a sidecar truncation watermark, preventing older `state.db` rows from reappearing after the WebUI transcript was intentionally shortened.
 
 ## [v0.51.136] — 2026-05-25 — Release DH (stage-batch18 — 5-PR streaming + session index batch)
 
