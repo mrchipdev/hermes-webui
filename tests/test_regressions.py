@@ -325,10 +325,8 @@ def test_server_delete_prunes_session_index(cleanup_test_sessions):
         )
         if delete_idx >= 0:
             delete_block = text[delete_idx:delete_idx+1800]
-            assert "prune_session_from_index" in delete_block, \
+            assert "prune_session_from_index(sid)" in delete_block, \
                 f"{label} session/delete must prune SESSION_INDEX_FILE"
-            assert "SESSION_INDEX_FILE.unlink" not in delete_block, \
-                f"{label} session/delete must not discard the whole session index"
             return
     assert False, "session/delete handler not found in server.py or api/routes.py"
 

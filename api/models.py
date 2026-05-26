@@ -244,7 +244,37 @@ def prune_session_from_index(session_id: str) -> None:
     sid = str(session_id or "")
     if not sid or not SESSION_INDEX_FILE.exists():
         return
-    _write_session_index(updates=[])
+    _tmp = SESSION_INDEX_FILE.with_suffix(f'.tmp.{os.getpid()}.{threading.current_thread().ident}')
+
+    _fallback = False
+    with _INDEX_WRITE_LOCK:
+        try:
+            with LOCK:
+                existing = json.loads(SESSION_INDEX_FILE.read_text(encoding='utf-8'))
+                if not isinstance(existing, list):
+                    raise ValueError("session index must be a list")
+                pruned = [e for e in existing if e.get('session_id') != sid]
+                if len(pruned) == len(existing):
+                    return
+                _payload = json.dumps(pruned, ensure_ascii=False, indent=2)
+
+            try:
+                with open(_tmp, 'w', encoding='utf-8') as f:
+                    f.write(_payload)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(_tmp, SESSION_INDEX_FILE)
+            except Exception:
+                try:
+                    _tmp.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                raise
+        except Exception:
+            _fallback = True
+
+    if _fallback:
+        _write_session_index(updates=None)
 
 
 def _active_stream_ids():

@@ -83,20 +83,21 @@ def test_compact_exposes_last_message_at_from_message_timestamp():
     assert compact["last_message_at"] == 200.0
 
 
-def test_prune_session_from_index_removes_only_deleted_row():
+def test_prune_session_from_index_removes_requested_row_only():
     index_file = models.SESSION_INDEX_FILE
     s_a = _make_session("sess_a", "A", updated_at=100)
     s_b = _make_session("sess_b", "B", updated_at=200)
     s_a.save()
     s_b.save()
 
-    s_a.path.unlink()
     prune_session_from_index("sess_a")
 
     index = _read_index(index_file)
     ids = [entry["session_id"] for entry in index]
     assert ids == ["sess_b"]
     assert index_file.exists()
+    assert s_a.path.exists()
+    assert s_b.path.exists()
 
 
 def test_all_sessions_backfills_last_message_at_for_legacy_index_rows():
