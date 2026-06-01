@@ -13,6 +13,7 @@ the real agent metadata catalog.
 """
 import sys
 import types
+from pathlib import Path as _Path
 
 
 def _install_fake_get_model_context_length(monkeypatch, recorder):
@@ -93,3 +94,42 @@ def test_empty_model_returns_zero(monkeypatch):
     _install_fake_get_model_context_length(monkeypatch, rec)
     assert _resolver()("") == 0
     assert _resolver()(None) == 0
+
+
+# --- #3263 dual-gate MUST-FIX invariants (Codex regression gate, v0.51.192) ---
+# These pin the two consistency fixes applied after the gate found that the
+# default-only guard dropped the stale cap but didn't (a) recompute a persisted
+# stale context_length, or (b) rescale the terminal SSE threshold. Both live
+# deep inside _run_agent_streaming, so we pin them at the source-structure level
+# (the live-snapshot path already had behavioral coverage; these guard the two
+# sibling paths from silently regressing back to the stale value).
+_STREAMING_SRC = (_Path(__file__).resolve().parent.parent / "api" / "streaming.py").read_text(encoding="utf-8")
+
+
+def test_persistence_fallback_also_runs_when_skip_cc_cl():
+    """The per-turn persistence fallback must recompute the real cap when the
+    stale compressor cap was skipped — not only when context_length is falsy.
+    Otherwise a previously-persisted stale 232K survives forever."""
+    assert "(not getattr(s, 'context_length', 0)) or _skip_cc_cl:" in _STREAMING_SRC, (
+        "persistence fallback gate must also fire on _skip_cc_cl (#3263 MUST-FIX 1)"
+    )
+
+
+def test_persistence_rescales_threshold_when_cap_skipped():
+    """When the stale cap is skipped and the real cap recomputed, the persisted
+    threshold_tokens must be rescaled to the real cap (or cleared), so a reload
+    matches the live snapshot."""
+    assert "if _skip_cc_cl:" in _STREAMING_SRC
+    assert "s.threshold_tokens = int(_orig_thresh * _real_cap / _orig_cap)" in _STREAMING_SRC, (
+        "persistence path must rescale threshold_tokens to the real cap (#3263 MUST-FIX 2)"
+    )
+
+
+def test_sse_done_payload_rescales_threshold_when_cap_dropped():
+    """The terminal SSE usage payload must rescale threshold_tokens when it
+    dropped the stale compressor cap, so the indicator doesn't revert on stream
+    end (messages.js overwrites S.lastUsage with this payload)."""
+    assert "_dropped_stale_cap_sse" in _STREAMING_SRC
+    assert "usage['threshold_tokens'] = int(_orig_cc_thresh_sse * _fb_cl / _orig_cc_cl_sse)" in _STREAMING_SRC, (
+        "SSE done payload must rescale threshold_tokens to the resolved window (#3263 MUST-FIX 3)"
+    )
